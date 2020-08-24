@@ -1,6 +1,7 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
 	"github.com/deanisty/zinx/ziface"
 	"net"
@@ -12,6 +13,18 @@ type Server struct {
 	IPVersion string // 网络版本
 	IP string // ip地址
 	Port int // 监听端口
+}
+
+// =================== 定义当前客户端链接的handler api========================
+func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
+	// 回显业务
+	fmt.Println("[Conn Handler] CallBackToClient ... ")
+	if _, err := conn.Write(data[:cnt]); err != nil {
+		fmt.Println("write back buf error : ", err)
+		return errors.New("CallBackToClient error")
+	}
+
+	return nil
 }
 
 func (s *Server) Start() {
@@ -31,6 +44,9 @@ func (s *Server) Start() {
 			return
 		}
 		fmt.Printf("Listening on %s:%d\n", s.IP, s.Port)
+
+		var cid uint32
+		cid = 0
 		// 3 处理客户端请求
 		for {
 			// 3.1 阻塞等待客户端连接
@@ -41,22 +57,10 @@ func (s *Server) Start() {
 			}
 			// 3.2 设置服务器最大连接限制
 			// 3.3 处理服务器业务处理
-
-			// client socket goroutine
-			go func() {
-				for {
-					buf := make([]byte, 512)
-					cnt, err := conn.Read(buf)
-					if err != nil {
-						fmt.Println("read error : ", err)
-						continue
-					}
-					if _, err := conn.Write(buf[:cnt]); err != nil {
-						fmt.Println("write back error : ", err)
-						continue
-					}
-				}
-			}()
+			dealConn := NewConnection(conn, cid, CallBackToClient)
+			cid ++
+			// 3.4 启动当前链接的处理业务
+			go dealConn.Start()
 		}
 	}()
 }
