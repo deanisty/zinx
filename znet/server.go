@@ -2,6 +2,7 @@ package znet
 
 import (
 	"fmt"
+	"github.com/deanisty/zinx/utils"
 	"github.com/deanisty/zinx/ziface"
 	"net"
 	"time"
@@ -17,6 +18,10 @@ type Server struct {
 
 func (s *Server) Start() {
 	fmt.Printf("Server [%s] starting...\n", s.Name)
+	fmt.Printf("[Zinx] Version: %s, MaxConn: %d, MaxPacketSize: %d\n",
+		utils.GlobalObject.Name,
+		utils.GlobalObject.MaxConn,
+		utils.GlobalObject.MaxPacketSize)
 	// listening goroutine
 	go func() {
 		// 1 获取一个tcp的套接字
@@ -73,12 +78,15 @@ func (s *Server) AddRouter(router ziface.IRouter) {
 	fmt.Println("Add Router success ")
 }
 
-func NewServer (name string) ziface.IServer {
+func NewServer () ziface.IServer {
+	// 初始化全局配置文件
+	utils.GlobalObject.Reload()
+
 	s := &Server{
-		Name:      name,
+		Name:      utils.GlobalObject.Name,
 		IPVersion: "tcp4",
-		IP:        "0.0.0.0",
-		Port:      7777,
+		IP:        utils.GlobalObject.Host,
+		Port:      utils.GlobalObject.TcpPort,
 		Router: nil,
 	}
 
