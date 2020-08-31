@@ -1,8 +1,10 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
 	"github.com/deanisty/zinx/ziface"
+	"io"
 	"net"
 )
 
@@ -37,18 +39,37 @@ func (c *Connection) StartReader() {
 	defer c.Stop()
 
 	for {
-		// 读取数据到buf中 阻塞
-		buf := make([]byte, 512)
-		_, err := c.Conn.Read(buf)
-		if err != nil {
-			fmt.Println("recv buf error : ", err)
+		// 封包拆包对象
+		dp := NewDataPack()
+		// 读取header
+		headData := make([]byte, dp.GetHeadLen())
+		if _, err := io.ReadFull(c.GetTCPConnection(), headData); err != nil {
+			fmt.Println("read msg head error : ", err)
 			c.ExitBuffChan <- true
 			continue
 		}
-		// 构造请求 request
+		// 拆包
+		msg, err := dp.Unpack(headData)
+		if err != nil {
+			fmt.Println("unpack error : ", err)
+			c.ExitBuffChan <- true
+			continue
+		}
+		// 根据 dataLen 读取data
+		var data []byte
+		if msg.GetDataLen() > 0 {
+			data = make([]byte, msg.GetDataLen())
+			if _, err := io.ReadFull(c.GetTCPConnection(), data); err != nil {
+				fmt.Println("read data error : ", err)
+				c.ExitBuffChan <- true
+				continue
+			}
+		}
+		msg.SetData(data)
+		// 构造客户端请求 request
 		req := Request{
 			conn: c,
-			data: buf,
+			data: msg,
 		}
 		// 从 router 中找到注册绑定 Conn 对应的 Handler
 		go func (request ziface.IRequest) {
@@ -101,4 +122,28 @@ func (c *Connection) GetConnID() uint32 {
 
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.Conn.RemoteAddr()
+}
+
+/**
+ 发送数据到客户端
+ */
+func (c *Connection) SendMessage(msgId uint32, data []byte) error {
+	if c.isClosed == true {
+		return errors.New("connection closed when send msg")
+	}
+	// 封包
+	dp := NewDataPack()
+	msg, err := dp.Pack(NewMessagePacket(msgId, data))
+	if err != nil {
+		fmt.Println("Pack msg error : id ", msgId)
+		return errors.New("pack message error")
+	}
+	// 写回客户端
+	if _, err = c.Conn.Write(msg); err != nil {
+		fmt.Println("Write message error : id ", msgId)
+		c.ExitBuffChan <- true
+		return errors.New("conn write error")
+	}
+
+	return nil
 }
